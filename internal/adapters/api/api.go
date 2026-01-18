@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"gps/internal/middleware"
+	"gps/internal/adapters/api/middleware"
 	"gps/pkg/ws"
 	"net/http"
 )
