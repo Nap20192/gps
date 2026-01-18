@@ -1,0 +1,168 @@
+package ws
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"sync"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+type IdProvider func(ctx context.Context) (uuid.UUID, bool)
+
+type Manager struct {
+	ctx          context.Context
+	clients      map[uuid.UUID]*Client
+	idProvider   IdProvider
+	read         chan ReadFromWs
+	write        chan WriteToWs
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	shutdownOnce sync.Once
+	mu           sync.Mutex
+}
+
+func NewManager(idProvider IdProvider) *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Manager{
+		clients:    make(map[uuid.UUID]*Client),
+		idProvider: idProvider,
+		wg:         sync.WaitGroup{},
+		read:       make(chan ReadFromWs),
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+}
+
+func (m *Manager) addClient(c *Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clients[c.id] = c
+}
+
+func (m *Manager) removeClient(c uuid.UUID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.clients, c)
+}
+
+func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to upgrade connection"))
+		return
+	}
+
+	id, ok := m.idProvider(r.Context())
+
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("unauthorized"))
+		return
+	}
+	slog.Info("WebSocket connection established", "client_id", id)
+
+	client := NewClient(id, conn, m)
+	m.addClient(client)
+	m.wg.Add(3)
+	go func() {
+		defer m.wg.Done()
+		client.readMessages()
+	}()
+	go func() {
+		defer m.wg.Done()
+		client.writeMessages()
+	}()
+	go func() {
+		defer m.wg.Done()
+		for message := range client.inbound {
+			m.read <- ReadFromWs{
+				Payload:    message,
+				ProducerID: client.id,
+			}
+		}
+	}()
+}
+
+type WriteToWs struct {
+	Payload    []byte
+	ConsumerID uuid.UUID
+}
+
+type ReadFromWs struct {
+	Payload    []byte
+	ProducerID uuid.UUID
+}
+
+func (m *Manager) StartWrite(ctx context.Context) {
+	m.mu.Lock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	m.ctx, m.cancel = context.WithCancel(ctx)
+	m.mu.Unlock()
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		for {
+			select {
+			case <-m.ctx.Done():
+				return
+			case message, ok := <-m.write:
+				if !ok {
+					return
+				}
+				m.mu.Lock()
+				client, exists := m.clients[message.ConsumerID]
+				m.mu.Unlock()
+				if exists {
+					select {
+					case client.outbound <- message.Payload:
+					default:
+						slog.Warn("Client outbound channel full", "client_id", message.ConsumerID)
+					}
+				} else {
+					slog.Warn("Client not found for message", "client_id", message.ConsumerID)
+				}
+			}
+		}
+	}()
+}
+
+func (m *Manager) ReadChannel() <-chan ReadFromWs {
+	return m.read
+}
+
+func (m *Manager) WithWriteChannel(write chan WriteToWs) {
+	m.write = write
+
+}
+
+func (m *Manager) Shutdown() {
+	m.shutdownOnce.Do(func() {
+		if m.cancel != nil {
+			m.cancel()
+		}
+
+		m.mu.Lock()
+		for _, client := range m.clients {
+			client.close()
+		}
+		m.mu.Unlock()
+
+		m.wg.Wait()
+
+		close(m.read)
+	})
+}
