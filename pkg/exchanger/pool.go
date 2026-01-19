@@ -11,8 +11,8 @@ import (
 type Exchanger[T any] interface {
 	Stream(ctx context.Context, out chan<- Task[T], results chan<- Result)
 	Stop() error
-
 }
+
 type Task[T any] struct {
 	Exchanger string
 	Data T

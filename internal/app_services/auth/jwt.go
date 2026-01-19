@@ -19,11 +19,6 @@ var (
 	jwtSecret = []byte("super-secret-key")
 )
 
-func InitJwt(secret string, ttl time.Duration) {
-	tokenTTL = ttl
-	jwtSecret = []byte(secret)
-}
-
 func SetJWTConfig(secret string, ttl time.Duration) {
 	if secret != "" {
 		jwtSecret = []byte(secret)

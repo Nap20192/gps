@@ -1,1 +1,7 @@
-package services
+package aggregator
+
+
+type AggregatorService struct {
+
+
+}

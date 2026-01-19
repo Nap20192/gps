@@ -1,4 +1,4 @@
-package mongoclient
+package mongoDb
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type MongoClient struct {
+type Repository struct {
 	client    *mongo.Client
 	db        *mongo.Database
 	routeColl *mongo.Collection
@@ -20,30 +20,20 @@ type MongoClient struct {
 	ctx       context.Context
 }
 
-func NewMongoClient(uri, dbName, collectionName string) (*MongoClient, error) {
-	ctx := context.Background()
-	clientOpts := options.Client().ApplyURI(uri)
-	client, err := mongo.Connect(ctx, clientOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := client.Ping(ctx, nil); err != nil {
-		return nil, err
-	}
+func NewRepository(ctx context.Context, client *mongo.Client, dbName string) (*Repository, error) {
 
 	db := client.Database(dbName)
-	coll := db.Collection(collectionName)
 
+	coll := db.Collection("routes")
 	indexModel := mongo.IndexModel{
 		Keys:    bson.M{"route_id": 1},
 		Options: options.Index().SetUnique(true),
 	}
-	_, err = coll.Indexes().CreateOne(ctx, indexModel)
+	_, err := coll.Indexes().CreateOne(ctx, indexModel)
 	if err != nil {
 		return nil, err
 	}
-	return &MongoClient{
+	return &Repository{
 		client:    client,
 		db:        db,
 		routeColl: coll,
@@ -52,11 +42,11 @@ func NewMongoClient(uri, dbName, collectionName string) (*MongoClient, error) {
 	}, nil
 }
 
-func (m *MongoClient) CreateRoute(route models.Route) (*mongo.InsertOneResult, error) {
+func (m *Repository) CreateRoute(route models.Route) (*mongo.InsertOneResult, error) {
 	return m.routeColl.InsertOne(m.ctx, route)
 }
 
-func (m *MongoClient) GetRouteByID(routeID uuid.UUID) (*models.Route, error) {
+func (m *Repository) GetRouteByID(routeID uuid.UUID) (*models.Route, error) {
 	var route models.Route
 	err := m.routeColl.FindOne(m.ctx, bson.M{"route_id": routeID}).Decode(&route)
 	if err != nil {
@@ -65,7 +55,7 @@ func (m *MongoClient) GetRouteByID(routeID uuid.UUID) (*models.Route, error) {
 	return &route, nil
 }
 
-func (m *MongoClient) GetGPSDataLastNSeconds(n int) ([]models.GPSData, error) {
+func (m *Repository) GetGPSDataLastNSeconds(n int) ([]models.GPSData, error) {
 	since := time.Now().Add(-time.Duration(n) * time.Second)
 	cursor, err := m.routeColl.Find(m.ctx, bson.M{
 		"path.timestamp": bson.M{"$gte": since},
@@ -92,18 +82,18 @@ func (m *MongoClient) GetGPSDataLastNSeconds(n int) ([]models.GPSData, error) {
 	return result, nil
 }
 
-func (m *MongoClient) AddGPSDataToRoute(routeID uuid.UUID, gps models.GPSData) (*mongo.UpdateResult, error) {
+func (m *Repository) AddGPSDataToRoute(routeID uuid.UUID, gps models.GPSData) (*mongo.UpdateResult, error) {
 	update := bson.M{
 		"$push": bson.M{"path": gps},
 	}
 	return m.routeColl.UpdateOne(m.ctx, bson.M{"route_id": routeID}, update)
 }
 
-func (m *MongoClient) Close() error {
+func (m *Repository) Close() error {
 	return m.client.Disconnect(m.ctx)
 }
 
-func (m *MongoClient) CreateUser(username, email, passwordHash string) (uuid.UUID, error) {
+func (m *Repository) CreateUser(username, email, passwordHash string) (uuid.UUID, error) {
 	id := uuid.New()
 	user := models.User{
 		UserID:       id,
@@ -117,7 +107,7 @@ func (m *MongoClient) CreateUser(username, email, passwordHash string) (uuid.UUI
 	return id, nil
 }
 
-func (m *MongoClient) GetUserByUsername(username string) (models.User, error) {
+func (m *Repository) GetUserByUsername(username string) (models.User, error) {
 	var user models.User
 	err := m.usersColl.FindOne(m.ctx, bson.M{"username": username}).Decode(&user)
 	if err != nil {

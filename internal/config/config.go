@@ -28,11 +28,19 @@ type JWTConfig struct {
 	Secret string
 	Expiry time.Duration
 }
+type AppConfig struct {
+	LogLevel          string
+	HTTPPort          string
+	NumExchangers     int
+	PortsPerExchanger string
+	NumWorkers        int
+}
 
 type Config struct {
 	Mongo MongoConfig
 	Redis RedisConfig
 	JWT   JWTConfig
+	App   AppConfig
 }
 
 func Load() Config {
@@ -56,6 +64,13 @@ func Load() Config {
 		JWT: JWTConfig{
 			Secret: getEnv("JWT_SECRET", "super-secret-key"),
 			Expiry: getEnvDuration("JWT_EXPIRY", time.Hour),
+		},
+		App: AppConfig{
+			LogLevel:          getEnv("APP_LOG_LEVEL", "info"),
+			HTTPPort:          getEnv("APP_HTTP_PORT", "8080"),
+			NumExchangers:     getEnvInt("APP_NUM_EXCHANGERS", 5),
+			PortsPerExchanger: getEnv("APP_PORTS_PER_EXCHANGER", "8000|8001|8002|8003|8004"),
+			NumWorkers:        getEnvInt("APP_NUM_WORKERS", 20),
 		},
 	}
 }

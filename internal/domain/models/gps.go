@@ -21,5 +21,6 @@ type Route struct {
 	RouteID   uuid.UUID `json:"route_id" bson:"route_id"`
 	Path      []GPSData `json:"path" bson:"path"`
 	StartTime time.Time `json:"start_time" bson:"start_time"`
+	Finished  bool      `json:"finished" bson:"finished"`
 	EndTime   time.Time `json:"end_time" bson:"end_time,omitempty"`
 }

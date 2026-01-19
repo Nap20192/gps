@@ -19,7 +19,8 @@ func (a *Api) Start() error {
 
 	mux.Handle("POST /sign_up", middleware.LoggingMiddleware(a.handler.signUp))
 	mux.Handle("POST /login", middleware.LoggingMiddleware(a.handler.login))
-	mux.Handle("GET /ws/{user_id}", middleware.LoggingMiddleware(a.handler.websocket))
+	mux.Handle("GET /ws/location/{route_id}", middleware.LoggingMiddleware(a.handler.websocket))
+	mux.Handle("GET /ws/aggregation/{route_id}", middleware.LoggingMiddleware(a.handler.websocket))
 
 	a.server.Handler = mux
 	return a.server.ListenAndServe()
