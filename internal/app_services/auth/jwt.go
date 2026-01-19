@@ -9,9 +9,8 @@ import (
 )
 
 type JWTClaims struct {
-	UserID uuid.UUID
-	Email  string
-	Role   string
+	UserID   uuid.UUID
+	Username string
 	jwt.RegisteredClaims
 }
 
@@ -19,6 +18,11 @@ var (
 	tokenTTL  = time.Hour * 1
 	jwtSecret = []byte("super-secret-key")
 )
+
+func InitJwt(secret string, ttl time.Duration) {
+	tokenTTL = ttl
+	jwtSecret = []byte(secret)
+}
 
 func SetJWTConfig(secret string, ttl time.Duration) {
 	if secret != "" {

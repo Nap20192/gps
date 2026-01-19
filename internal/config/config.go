@@ -39,7 +39,7 @@ func Load() Config {
 	return Config{
 		Mongo: MongoConfig{
 			URI:            getEnv("MONGO_URI", "mongodb://mongo:mongo@localhost:27017/?authSource=admin"),
-			Database:       getEnv("MONGO_DB", "ride_hail"),
+			Database:       getEnv("MONGO_DB", "gps"),
 			ConnectTimeout: getEnvDurationSeconds("MONGO_CONNECT_TIMEOUT_SECONDS", 10),
 		},
 		Redis: RedisConfig{

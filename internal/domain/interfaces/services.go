@@ -1,6 +1,6 @@
 package interfaces
 
-import "gps/internal/auth"
+import "gps/internal/app_services/auth"
 
 type AuthService interface {
 	SignUp(username, password string) error

@@ -16,12 +16,9 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-type IdProvider func(ctx context.Context) (uuid.UUID, bool)
-
 type Manager struct {
 	ctx          context.Context
 	clients      map[uuid.UUID]*Client
-	idProvider   IdProvider
 	read         chan ReadFromWs
 	write        chan WriteToWs
 	cancel       context.CancelFunc
@@ -30,15 +27,14 @@ type Manager struct {
 	mu           sync.Mutex
 }
 
-func NewManager(idProvider IdProvider) *Manager {
+func NewManager() *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		clients:    make(map[uuid.UUID]*Client),
-		idProvider: idProvider,
-		wg:         sync.WaitGroup{},
-		read:       make(chan ReadFromWs),
-		ctx:        ctx,
-		cancel:     cancel,
+		clients: make(map[uuid.UUID]*Client),
+		wg:      sync.WaitGroup{},
+		read:    make(chan ReadFromWs),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -54,22 +50,14 @@ func (m *Manager) removeClient(c uuid.UUID) {
 	delete(m.clients, c)
 }
 
-func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request) {
+func (m *Manager) ServeWS(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to upgrade connection"))
+		slog.Warn("WebSocket upgrade failed", "client_id", id.String(), "error", err)
 		return
 	}
 
-	id, ok := m.idProvider(r.Context())
-
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("unauthorized"))
-		return
-	}
-	slog.Info("WebSocket connection established", "client_id", id)
+	slog.Info("WebSocket connection established", "client_id", id.String())
 
 	client := NewClient(id, conn, m)
 	m.addClient(client)
@@ -126,6 +114,7 @@ func (m *Manager) StartWrite(ctx context.Context) {
 				m.mu.Lock()
 				client, exists := m.clients[message.ConsumerID]
 				m.mu.Unlock()
+
 				if exists {
 					select {
 					case client.outbound <- message.Payload:
@@ -133,7 +122,7 @@ func (m *Manager) StartWrite(ctx context.Context) {
 						slog.Warn("Client outbound channel full", "client_id", message.ConsumerID)
 					}
 				} else {
-					slog.Warn("Client not found for message", "client_id", message.ConsumerID)
+					slog.Warn("Client not found for message", "client_id", message.ConsumerID, "message", string(message.Payload))
 				}
 			}
 		}
@@ -146,7 +135,6 @@ func (m *Manager) ReadChannel() <-chan ReadFromWs {
 
 func (m *Manager) WithWriteChannel(write chan WriteToWs) {
 	m.write = write
-
 }
 
 func (m *Manager) Shutdown() {
@@ -155,11 +143,9 @@ func (m *Manager) Shutdown() {
 			m.cancel()
 		}
 
-		m.mu.Lock()
 		for _, client := range m.clients {
 			client.close()
 		}
-		m.mu.Unlock()
 
 		m.wg.Wait()
 

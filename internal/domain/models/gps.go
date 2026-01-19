@@ -7,13 +7,19 @@ import (
 )
 
 type GPSData struct {
-	EntityID  uuid.UUID
-	Location  Location
-	Timestamp time.Time
+	Location  Location  `json:"location" bson:"location"`
+	Timestamp time.Time `json:"timestamp" bson:"timestamp"`
 }
 
 type Location struct {
-	Latitude  float64
-	Longitude float64
-	Altitude  float64
+	Latitude  float64 `json:"latitude" bson:"latitude"`
+	Longitude float64 `json:"longitude" bson:"longitude"`
+	Altitude  float64 `json:"altitude" bson:"altitude"`
+}
+
+type Route struct {
+	RouteID   uuid.UUID `json:"route_id" bson:"route_id"`
+	Path      []GPSData `json:"path" bson:"path"`
+	StartTime time.Time `json:"start_time" bson:"start_time"`
+	EndTime   time.Time `json:"end_time" bson:"end_time,omitempty"`
 }

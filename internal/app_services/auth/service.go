@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 
 	"gps/internal/config"
+	"gps/internal/domain/models"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -17,79 +21,71 @@ func ConfigureJWT(cfg config.JWTConfig) {
 	SetJWTConfig(cfg.Secret, cfg.Expiry)
 }
 
-// type RegisterInput struct {
-// 	Attrs    map[string]string `json:"attrs,omitempty"`
-// 	Email    string            `json:"email" binding:"required,email,max=64"`
-// 	Password string            `json:"password" binding:"required,min=8,max=64"`
-// }
+type Input struct {
+	Username string `json:"username" binding:"required,max=64"`
+	Password string `json:"password" binding:"required,min=8,max=64"`
+}
 
-// type LoginInput struct {
-// 	Email    string `json:"email" binding:"required,email,max=64"`
-// 	Password string `json:"password" binding:"required,min=8,max=64"`
-// }
+type repo interface {
+	CreateUser(ctx context.Context, username, passwordHash string) (uuid.UUID, error)
+	GetUserByUsername(ctx context.Context, username string) (models.User, error)
+}
 
-// type AuthService struct {
-// 	queries sqlc.Queries
-// }
+type AuthService struct {
+	repo repo
+}
 
-// func NewAuthService(queries sqlc.Queries) *AuthService {
-// 	return &AuthService{
-// 		queries: queries,
-// 	}
-// }
+func NewAuthService(repo repo) *AuthService {
+	return &AuthService{
+		repo: repo,
+	}
+}
 
-// func (s *AuthService) SignUp(ctx context.Context, input RegisterInput, role core.UserRole) (string, error) {
-// 	salt, hashedPassword, err := hashPassword(input.Password)
-// 	if err != nil {
-// 		return "", err
-// 	}
+func (s *AuthService) SignUp(ctx context.Context, input Input) (string, error) {
+	hashedPassword, err := hashPassword(input.Password)
+	if err != nil {
+		return "", err
+	}
 
-// 	user, err := s.queries.CreateUser(ctx, sqlc.CreateUserParams{
-// 		Email:        input.Email,
-// 		Role:         role.String(),
-// 		Status:       core.UserStatusInactive.String(),
-// 		PasswordHash: hashedPassword,
-// 		Salt:         salt,
-// 		Attrs:        input.Attrs,
-// 	})
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	token, err := generateToken(JWTClaims{
-// 		UserID: user.ID,
-// 		Email:  user.Email,
-// 		Role:   user.Role,
-// 	})
+	id, err := s.repo.CreateUser(ctx, input.Username, hashedPassword)
+	if err != nil {
+		return "", err
+	}
+	token, err := generateToken(JWTClaims{
+		UserID:   id,
+		Username: input.Username,
+	})
 
-// 	return token, nil
-// }
+	return token, nil
+}
 
-// func (s *AuthService) LogIn(ctx context.Context, input LoginInput) (string, error) {
-// 	inputEmail := input.Email
+func (s *AuthService) LogIn(ctx context.Context, input Input) (string, error) {
 
-// 	user, err := s.queries.GetUserByEmail(ctx, inputEmail)
-// 	if err != nil {
-// 		return "", ErrUserNotFound
-// 	}
+	inputUsername := input.Username
+	user, err := s.repo.GetUserByUsername(ctx, inputUsername)
 
-// 	isValid := verifyPassword(input.Password, user.Salt, user.PasswordHash)
+	if err != nil {
+		return "", ErrUserNotFound
+	}
 
-// 	if !isValid {
-// 		return "", ErrInvalidCredentials
-// 	}
+	isValid := verifyPassword(input.Password, user.PasswordHash)
 
-// 	token, err := generateToken(JWTClaims{
-// 		UserID: user.ID,
-// 		Email:  user.Email,
-// 		Role:   user.Role,
-// 	})
-// 	if err != nil {
-// 		return "", err
-// 	}
+	if !isValid {
+		return "", ErrInvalidCredentials
+	}
 
-// 	return token, nil
-// }
+	token, err := generateToken(JWTClaims{
+		UserID:   user.UserID,
+		Username: user.Username,
+	})
 
-// func (s *AuthService) ParseToken(tokenStr string) (JWTClaims, error) {
-// 	return parseToken(tokenStr)
-// }
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func (s *AuthService) ParseToken(tokenStr string) (JWTClaims, error) {
+	return parseToken(tokenStr)
+}
